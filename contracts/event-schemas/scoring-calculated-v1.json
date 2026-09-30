@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "requestId",
+    "userId",
+    "score",
+    "recommendation",
+    "modelVersion",
+    "factors"
+  ],
+  "properties": {
+    "requestId": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "userId": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "score": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "recommendation": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "modelVersion": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "factors": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

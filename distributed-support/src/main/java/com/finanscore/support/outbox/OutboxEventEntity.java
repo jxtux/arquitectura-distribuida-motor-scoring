@@ -1,0 +1,4 @@
+package com.finanscore.support.outbox;
+import jakarta.persistence.*; import java.time.Instant;
+@Entity @Table(name="outbox_event",indexes=@Index(name="idx_outbox_status_created",columnList="status,created_at"))
+public class OutboxEventEntity { @Id @Column(name="outbox_event_id",length=36) public String id; @Column(name="event_id",nullable=false,unique=true,length=36) public String eventId; @Column(name="event_type",nullable=false,length=80) public String eventType; @Column(name="aggregate_id",nullable=false,length=100) public String aggregateId; @Column(nullable=false,length=120) public String topic; @Column(name="event_key",nullable=false,length=100) public String eventKey; @Lob @Column(nullable=false,columnDefinition="TEXT") public String payload; @Column(nullable=false,length=20) public String status; @Column(name="created_at",nullable=false) public Instant createdAt; @Column(name="published_at") public Instant publishedAt; }

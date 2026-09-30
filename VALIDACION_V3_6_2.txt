@@ -1,0 +1,18 @@
+VALIDACION ESTATICA V3.6.2
+
+- docker-compose.yml parsea como YAML valido.
+- Nombre Compose: motor-scoring-distributed-v3-6-2.
+- MinIO se construye localmente desde platform/minio/Dockerfile.
+- Puertos host parametrizados mediante variables *_HOST_PORT.
+- Prometheus fijado a v3.14.0.
+- Grafana fijado a 13.2.2.
+- Loki fijado a 3.7.8.
+- Tempo fijado a 2.10.8 (rama 2.x mantenida y compatible con la configuracion local existente).
+- OpenTelemetry Collector Contrib fijado a 0.161.0.
+- Grafana Alloy fijado a v1.20.0.
+- scripts/preflight-local.ps1 agregado.
+- scripts/verify-local-stack.ps1 agregado.
+- scripts/run-local.ps1 ejecuta preflight + compose up + verificacion.
+
+LIMITACION DE ESTA VALIDACION:
+El entorno de generacion del ZIP no dispone de Docker Engine, por lo que no se ejecuto el stack completo aqui. La validacion runtime debe realizarse en Windows/Docker Desktop con .\scripts\run-local.ps1; el script incluido reporta automaticamente los endpoints que no respondan.

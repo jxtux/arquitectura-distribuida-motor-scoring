@@ -1,0 +1,209 @@
+_format_version: '3.0'
+
+# V3.6.7 - JWT perimetral + HTTPS/TLS verificado hacia los upstreams internos.
+# IAM emite Access JWT RS256 con iss=finanscore. render-kong-config.ps1 inserta
+# la clave publica JWT y la CA interna que firma los certificados HTTPS de servicios.
+
+ca_certificates:
+- id: 7f367000-0000-4000-8000-000000000001
+  cert: |-
+__INTERNAL_CA_PEM__
+consumers:
+- username: finanscore-iam
+  custom_id: finanscore-iam-issuer
+  jwt_secrets:
+  - key: finanscore
+    algorithm: RS256
+    secret: unused-rs256-secret
+    rsa_public_key: |-
+__IAM_PUBLIC_KEY_PEM__
+
+services:
+- name: iam-service
+  url: https://iam-service:8081
+  tls_verify: true
+  tls_verify_depth: 2
+  ca_certificates:
+  - 7f367000-0000-4000-8000-000000000001
+  routes:
+  # Login, registro, MFA, refresh y callbacks OAuth deben seguir siendo publicos.
+  - name: iam-public
+    paths:
+    - /api/v1/auth
+    - /oauth2
+    - /login/oauth2
+    strip_path: false
+    protocols:
+    - https
+  # /api/v1/users/* requiere Access JWT valido en Kong y vuelve a validarse en IAM.
+  - name: iam-users
+    paths:
+    - /api/v1/users
+    strip_path: false
+    protocols:
+    - https
+
+- name: credit-service
+  url: https://credit-service:8082
+  tls_verify: true
+  tls_verify_depth: 2
+  ca_certificates:
+  - 7f367000-0000-4000-8000-000000000001
+  routes:
+  - name: credit
+    paths:
+    - /api/v1/credit-requests
+    strip_path: false
+    protocols:
+    - https
+
+- name: payment-service
+  url: https://payment-service:8083
+  tls_verify: true
+  tls_verify_depth: 2
+  ca_certificates:
+  - 7f367000-0000-4000-8000-000000000001
+  routes:
+  - name: payment
+    paths:
+    - /api/v1/payments
+    strip_path: false
+    protocols:
+    - https
+
+- name: report-service
+  url: https://report-service:8085
+  tls_verify: true
+  tls_verify_depth: 2
+  ca_certificates:
+  - 7f367000-0000-4000-8000-000000000001
+  routes:
+  - name: reports
+    paths:
+    - /api/v1/reports
+    strip_path: false
+    protocols:
+    - https
+
+- name: query-service
+  url: https://query-service:8088
+  tls_verify: true
+  tls_verify_depth: 2
+  ca_certificates:
+  - 7f367000-0000-4000-8000-000000000001
+  routes:
+  - name: query
+    paths:
+    - /api/v1/query
+    strip_path: false
+    protocols:
+    - https
+
+- name: audit-service
+  url: https://audit-service:8087
+  tls_verify: true
+  tls_verify_depth: 2
+  ca_certificates:
+  - 7f367000-0000-4000-8000-000000000001
+  routes:
+  - name: admin-audit
+    paths:
+    - /api/v1/admin
+    strip_path: false
+    protocols:
+    - https
+
+plugins:
+# CORS global para Angular local.
+- name: cors
+  config:
+    origins:
+    - http://localhost:4200
+    methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+    headers:
+    - Authorization
+    - Content-Type
+    - Idempotency-Key
+    - X-Correlation-Id
+    credentials: true
+
+# Rate limiting global.
+- name: rate-limiting
+  config:
+    minute: 120
+    policy: local
+
+# JWT perimetral solo en rutas protegidas. Kong valida firma RS256 y exp.
+# Los microservicios vuelven a validar issuer, audience, token_use, mfa,
+# roles y permissions mediante Spring Security.
+- name: jwt
+  route: iam-users
+  config:
+    header_names: [authorization]
+    uri_param_names: []
+    cookie_names: []
+    key_claim_name: iss
+    claims_to_verify: [exp]
+    run_on_preflight: false
+    secret_is_base64: false
+
+- name: jwt
+  route: credit
+  config:
+    header_names: [authorization]
+    uri_param_names: []
+    cookie_names: []
+    key_claim_name: iss
+    claims_to_verify: [exp]
+    run_on_preflight: false
+    secret_is_base64: false
+
+- name: jwt
+  route: payment
+  config:
+    header_names: [authorization]
+    uri_param_names: []
+    cookie_names: []
+    key_claim_name: iss
+    claims_to_verify: [exp]
+    run_on_preflight: false
+    secret_is_base64: false
+
+- name: jwt
+  route: reports
+  config:
+    header_names: [authorization]
+    uri_param_names: []
+    cookie_names: []
+    key_claim_name: iss
+    claims_to_verify: [exp]
+    run_on_preflight: false
+    secret_is_base64: false
+
+- name: jwt
+  route: query
+  config:
+    header_names: [authorization]
+    uri_param_names: []
+    cookie_names: []
+    key_claim_name: iss
+    claims_to_verify: [exp]
+    run_on_preflight: false
+    secret_is_base64: false
+
+- name: jwt
+  route: admin-audit
+  config:
+    header_names: [authorization]
+    uri_param_names: []
+    cookie_names: []
+    key_claim_name: iss
+    claims_to_verify: [exp]
+    run_on_preflight: false
+    secret_is_base64: false

@@ -1,0 +1,8 @@
+**/target
+**/node_modules
+**/dist
+.git
+.idea
+.vscode
+*.log
+motor-scoring-distributed-v3.zip

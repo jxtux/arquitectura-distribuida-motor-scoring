@@ -1,0 +1,1 @@
+package com.finanscore.report.infrastructure;import org.springframework.data.jpa.repository.JpaRepository;import java.util.*;public interface ReportRepository extends JpaRepository<ReportEntity,UUID>{Optional<ReportEntity> findByRequestId(UUID id);}

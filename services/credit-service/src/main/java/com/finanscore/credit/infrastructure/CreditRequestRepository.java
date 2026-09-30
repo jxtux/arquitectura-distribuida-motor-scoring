@@ -1,0 +1,1 @@
+package com.finanscore.credit.infrastructure; import org.springframework.data.jpa.repository.JpaRepository;import java.util.*; public interface CreditRequestRepository extends JpaRepository<CreditRequestEntity,UUID>{List<CreditRequestEntity> findByUserIdOrderByCreatedAtDesc(Long userId);}

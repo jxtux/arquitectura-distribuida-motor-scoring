@@ -1,0 +1,1 @@
+package com.finanscore.payment.domain;import java.math.BigDecimal;public interface ExchangeRatePort{BigDecimal rateFromPen(String currency);}

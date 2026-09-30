@@ -1,0 +1,4 @@
+syntax = "proto3"; package finanscore.iam.v1; option java_package="com.finanscore.contracts.iam.v1"; option java_multiple_files=true;
+service UserDirectory { rpc GetUser(GetUserRequest) returns (UserReply); }
+message GetUserRequest { int64 user_id=1; }
+message UserReply { int64 user_id=1; string display_name=2; string email=3; string status=4; }

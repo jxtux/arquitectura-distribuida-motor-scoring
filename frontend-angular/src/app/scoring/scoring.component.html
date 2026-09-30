@@ -1,0 +1,47 @@
+<div class="app-shell"><div class="app-topbar"><div class="app-topbar-inner"><div class="app-brand-inline"><span class="app-brand-mark">FS</span><span>FinanScore</span></div><nav class="private-nav"><a routerLink="/evaluacion">Nueva evaluación</a><a routerLink="/mis-solicitudes">Mis solicitudes</a></nav><div class="app-user-menu"><div class="app-user-copy"><strong>{{user?.displayName}}</strong><span>{{user?.email}}</span></div><button class="logout-button" (click)="logout()">Cerrar sesión</button></div></div></div>
+<main class="container"><header><span class="eyebrow">Evaluación de riesgo crediticio</span><h1>Solicitud de evaluación</h1><p>Completa 3 pasos. Tu perfil financiero se obtiene desde la fuente crediticia simulada; no debes ingresarlo manualmente.</p></header>
+<div class="stepper"><div [class.active]="step===1" [class.done]="step>1"><b>1</b><span>Solicitud</span></div><div [class.active]="step===2" [class.done]="step>2"><b>2</b><span>Pago</span></div><div [class.active]="step===3"><b>3</b><span>Estado</span></div></div>
+<p class="error" *ngIf="error">{{error}}</p>
+<section class="card" *ngIf="step===1"><h2>Paso 1 — Datos de la solicitud</h2><div class="identity-info"><strong>{{user?.displayName}}</strong><span>El reporte PDF será enviado a: <b>{{user?.email}}</b></span></div><form [formGroup]="application" (ngSubmit)="create()"><div class="grid"><label>Producto crediticio<select formControlName="productCode"><option value="PRESTAMO_PERSONAL">Préstamo personal</option><option value="CREDITO_EDUCATIVO">Crédito educativo</option><option value="CREDITO_VEHICULAR">Crédito vehicular</option><option value="CAPITAL_TRABAJO">Capital de trabajo</option></select></label><label>Monto solicitado (PEN)<input type="number" formControlName="amount"><small>{{productHint()}}</small><small class="field-error" *ngIf="application.controls.amount.touched && application.controls.amount.invalid">Monto fuera del rango permitido para el producto.</small></label><label>Plazo (meses)<input type="number" formControlName="termMonths"><small class="field-error" *ngIf="application.controls.termMonths.touched && application.controls.termMonths.invalid">Plazo fuera del rango permitido para el producto.</small></label><label>Finalidad<input maxlength="150" formControlName="purpose"><small class="field-error" *ngIf="application.controls.purpose.touched && application.controls.purpose.invalid">La finalidad es obligatoria y debe tener máximo 150 caracteres.</small></label><label class="wide checkbox-line"><input type="checkbox" formControlName="consent"> Autorizo la consulta de información crediticia necesaria para evaluar esta solicitud.</label></div><button [disabled]="loading">Continuar al pago</button></form></section>
+<section class="card payment-card" *ngIf="step===2"><h2>Paso 2 — Pago y validación</h2><p class="demo-note">Pago simulado. Utiliza datos ficticios. No se almacena PAN completo ni CVV.</p><form [formGroup]="payment"><div class="grid"><label>Concepto<select formControlName="serviceCode"><option value="EVALUACION_CREDITICIA">Evaluación crediticia</option></select></label><label>Moneda<select formControlName="currency"><option>PEN</option><option>USD</option><option>EUR</option><option>CNY</option></select></label><div class="wide payment-amount"><span>Precio base: {{quote?.baseAmount}} {{quote?.baseCurrency}}</span><strong>Importe a pagar: {{quote?.amount}} {{quote?.currency}}</strong></div><label>Marca de tarjeta<select formControlName="cardBrand"><option value="VISA">Visa</option><option value="MASTERCARD">Mastercard</option><option value="AMEX">American Express</option><option value="DINERS">Diners Club</option></select></label><label>Número de tarjeta<input inputmode="numeric" autocomplete="off" formControlName="cardNumber"><small class="field-error" *ngIf="payment.controls.cardNumber.touched && payment.controls.cardNumber.hasError('pattern')">Ingresa entre 13 y 19 dígitos.</small><small class="field-error" *ngIf="payment.controls.cardNumber.touched && payment.controls.cardNumber.hasError('allZeros')">Pago no válido: el número no puede contener solo ceros.</small></label><label>MM/AA<input autocomplete="off" formControlName="expiry"><small class="field-error" *ngIf="payment.controls.expiry.touched && payment.controls.expiry.hasError('pattern')">Formato esperado MM/AA.</small><small class="field-error" *ngIf="payment.controls.expiry.touched && payment.controls.expiry.hasError('expired')">La tarjeta está expirada.</small></label><label>CVV<input type="password" inputmode="numeric" autocomplete="off" formControlName="cvv"><small class="field-error" *ngIf="payment.controls.cvv.touched && payment.controls.cvv.invalid">Ingresa 3 o 4 dígitos ficticios.</small></label></div><button type="button" (click)="confirmPayment()" [disabled]="loading">Realizar pago</button></form><div class="success-toast" *ngIf="paymentSuccess">✓ Pago realizado correctamente</div></section>
+<section class="card status-card" *ngIf="step===3 && request">
+  <h2>Paso 3 — Estado del proceso</h2>
+  <p>Solicitud <b>{{request.id}}</b></p>
+
+  <div class="timeline workflow-timeline">
+    <div
+      class="timeline-item"
+      *ngFor="let stage of workflowStages"
+      [ngClass]="stage.status.toLowerCase()">
+
+      <span class="timeline-icon" [attr.aria-label]="stage.status">
+        <span *ngIf="stage.status !== 'IN_PROGRESS'">{{stageIcon(stage)}}</span>
+        <span *ngIf="stage.status === 'IN_PROGRESS'" class="workflow-spinner" aria-label="Procesando"></span>
+      </span>
+
+      <span class="timeline-content">
+        <strong class="timeline-text">{{stage.label}}</strong>
+        <small class="timeline-state" *ngIf="stage.status === 'IN_PROGRESS'">Procesando...</small>
+        <small class="timeline-state success-copy" *ngIf="stage.status === 'SUCCESS'">Completado correctamente</small>
+        <small class="timeline-error" *ngIf="stage.status === 'ERROR'">{{stage.errorMessage}}</small>
+      </span>
+    </div>
+  </div>
+
+  <div class="error-message workflow-error-summary" *ngIf="hasVisualError()" role="alert">
+    <strong>Hubo un error al procesar tu evaluación.</strong><br>
+    No vuelvas a realizar el pago. La solicitud quedó registrada y puedes revisar su estado desde
+    <a routerLink="/mis-solicitudes">Mis solicitudes</a>.
+  </div>
+
+  <div class="process-message" [class.completed]="isVisualComplete()" *ngIf="!hasVisualError()">
+    <strong>{{visualHeadline()}}</strong>
+    <p *ngIf="!isVisualComplete()">Puedes permanecer en esta pantalla para seguir el avance. El procesamiento continuará aunque cierres esta pantalla.</p>
+    <p>Cuando finalice enviaremos el resultado a <b>{{user?.email}}</b>. También podrás descargar el PDF desde <a routerLink="/mis-solicitudes">Mis solicitudes</a>.</p>
+  </div>
+
+  <div class="result-summary" *ngIf="isVisualComplete()">
+    <p><b>Score:</b> {{request.score}} / 1000 &nbsp; <b>Recomendación:</b> {{request.recommendation}}</p>
+  </div>
+</section></main>
+<div class="modal-backdrop" *ngIf="showConfirm"><div class="confirm-modal"><h3>Confirmar pago</h3><p>¿Está seguro de realizar el pago de <b>{{quote?.amount}} {{quote?.currency}}</b> por <b>Evaluación crediticia</b>?</p><div><button class="secondary" (click)="cancelPayment()">Cancelar</button><button (click)="pay()">Confirmar</button></div></div></div></div>

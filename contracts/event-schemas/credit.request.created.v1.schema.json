@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CreditRequestCreated v1",
+  "type": "object",
+  "required": ["eventId","eventType","eventVersion","occurredAt","correlationId","source","aggregateId","payload"],
+  "properties": {
+    "eventType": {"const": "CreditRequestCreated"},
+    "eventVersion": {"const": 1},
+    "aggregateId": {"type":"string"},
+    "correlationId": {"type":"string"},
+    "payload": {"type":"object","required":["requestId","userId","productCode","amount","currency","termMonths","purpose"]}
+  }
+}

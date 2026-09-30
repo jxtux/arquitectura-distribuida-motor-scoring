@@ -1,0 +1,124 @@
+spring:
+  application:
+    name: iam-service
+  config:
+    import: ${SPRING_CONFIG_IMPORT:optional:vault://}
+  cloud:
+    vault:
+      uri: ${VAULT_URI:http://vault:8200}
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        app-role-path: approle
+      kv:
+        enabled: true
+        backend: secret
+        default-context: finanscore/iam-service
+        application-name: finanscore/iam-service
+  profiles:
+    active: api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/iam_db}
+    username: ${DB_USER:iam_user}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:29092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:SASL_SSL}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:SCRAM-SHA-512}
+      sasl.jaas.config: org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME:unset}" password="${KAFKA_PASSWORD}";
+      ssl.truststore.location: ${KAFKA_TRUSTSTORE_LOCATION:/run/secrets/client.truststore.jks}
+      ssl.truststore.password: ${KAFKA_TRUSTSTORE_PASSWORD}
+      ssl.truststore.type: JKS
+      ssl.endpoint.identification.algorithm: https
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${GMAIL_USERNAME:}
+    password: ${GMAIL_APP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:not-configured}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid,profile,email
+server:
+  port: ${SERVER_PORT:8081}
+  forward-headers-strategy: framework
+management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+app:
+  cors:
+    allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:4200}
+iam:
+  jwt:
+    issuer: ${IAM_JWT_ISSUER:finanscore}
+    audience: ${IAM_JWT_AUDIENCE:motor-scoring-api}
+    private-key: ${IAM_RSA_PRIVATE_KEY:/run/secrets/iam-private.pem}
+    public-key: ${IAM_RSA_PUBLIC_KEY:/run/secrets/iam-public.pem}
+    access-minutes: 10
+    refresh-days: 7
+  verification:
+    pepper: ${IAM_VERIFICATION_PEPPER:file:/run/secrets/iam-verification-pepper.txt}
+  totp:
+    issuer: FinanScore
+    aes-key-base64: ${IAM_TOTP_AES_KEY:file:/run/secrets/iam-totp-aes.key}
+  mail:
+    from: ${IAM_MAIL_FROM:no-reply@finanscore.local}
+  frontend:
+    social-callback: ${IAM_FRONTEND_SOCIAL_CALLBACK:http://localhost:4200/auth/social-callback}
+  refresh-cookie:
+    secure: ${IAM_REFRESH_COOKIE_SECURE:true}
+    same-site: ${IAM_REFRESH_COOKIE_SAME_SITE:None}
+  oauth:
+    tiktok:
+      client-key: ${TIKTOK_CLIENT_KEY:not-configured}
+      client-secret: ${TIKTOK_CLIENT_SECRET}
+      redirect-uri: ${TIKTOK_REDIRECT_URI:https://localhost:8443/api/v1/auth/social/tiktok/callback}
+  demo-password: ${IAM_DEMO_PASSWORD}
+  admin-email: ${IAM_ADMIN_EMAIL:admin@finanscore.local}
+  admin-password: ${IAM_ADMIN_PASSWORD}
+  admin-display-name: ${IAM_ADMIN_DISPLAY_NAME:Administrador Demo}
+  internal-oauth:
+    issuer: ${IAM_INTERNAL_OAUTH_ISSUER:https://localhost:8443}
+    audience: ${IAM_INTERNAL_OAUTH_AUDIENCE:iam-grpc}
+    access-seconds: ${IAM_INTERNAL_OAUTH_ACCESS_SECONDS:300}
+    notification-client-secret: ${OAUTH2_NOTIFICATION_CLIENT_SECRET}
+  grpc:
+    port: ${IAM_GRPC_PORT:9091}
+    server-cert: ${IAM_GRPC_SERVER_CERT:/run/secrets/iam-grpc-server.crt}
+    server-key: ${IAM_GRPC_SERVER_KEY:/run/secrets/iam-grpc-server.key}
+    ca-cert: ${IAM_GRPC_CA_CERT:/run/secrets/ca.crt}
+    required-scope: ${IAM_GRPC_REQUIRED_SCOPE:iam.user.read}

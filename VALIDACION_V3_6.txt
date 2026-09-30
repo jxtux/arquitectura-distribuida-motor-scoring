@@ -1,0 +1,22 @@
+Motor Scoring Distribuido V3.6
+==============================
+
+Cambios incorporados:
+[OK] Kong listener HTTPS 8443 + certificado local.
+[OK] Angular API_BASE_URL -> https://localhost:8443.
+[OK] Spring forward headers en IAM para Google OAuth detrás de Kong.
+[OK] Protobuf/gRPC UserDirectory.
+[OK] IAM gRPC server con mTLS obligatorio.
+[OK] Notification gRPC client con certificado cliente.
+[OK] OAuth2 Client Credentials interno y JWT corto con scope iam.user.read.
+[OK] Validación CN mTLS == subject JWT.
+[OK] Eliminado REST interno X-Internal-Token.
+[OK] OperationQueryService Timer ambiguity corregida.
+[OK] Dockerfiles sin JAR 3.3.0 hardcodeado.
+[OK] Imagen MinIO ajustada a la validada localmente.
+[OK] stop-local preserva volúmenes.
+
+Validación runtime sugerida:
+  .\scripts\verify-v36-security.ps1
+
+Nota: el flujo principal de negocio continúa por Kafka/Saga; gRPC se usa para sincronía puntual.

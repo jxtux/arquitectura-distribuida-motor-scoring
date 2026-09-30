@@ -1,0 +1,1 @@
+package com.finanscore.scoring.infrastructure;import org.springframework.data.jpa.repository.JpaRepository;import java.util.*;public interface EvaluationInputSnapshotRepository extends JpaRepository<EvaluationInputSnapshotEntity,UUID>{boolean existsByRequestId(UUID id);}

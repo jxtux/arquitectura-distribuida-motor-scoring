@@ -1,0 +1,27 @@
+Motor Scoring Distribuido V3.3 - validación realizada en entorno de generación
+
+OK  XML Maven: todos los pom.xml parsean correctamente.
+OK  YAML: docker-compose.yml y archivos YAML parsean correctamente.
+OK  JSON: artefactos JSON parsean correctamente.
+OK  Docker Compose (estático): depends_on referencian servicios existentes.
+OK  Estructura CQRS: query-service está en el reactor Maven y Docker Compose.
+OK  Persistencia: query_db/query_user + Flyway read models presentes.
+OK  Redis: servicio, cache-aside en Query Service y redis-exporter presentes.
+OK  Kafka seguro: principal query-service, SCRAM-SHA-512 y ACL de lectura/grupos presentes.
+OK  Gateway: /api/v1/query enruta a query-service.
+OK  Observabilidad: query-service y redis-exporter están en Prometheus.
+OK  Bash: scripts *.sh pasan bash -n.
+OK  TypeScript: transpileModule reporta 0 errores sintácticos.
+OK  Dominio puro de scoring: compila con javac --release 21.
+
+NO EJECUTADO: mvn clean test / package completo (Maven no está instalado en este entorno).
+NO EJECUTADO: docker compose up / verificación runtime (Docker CLI no está disponible en este entorno).
+NO EJECUTADO: build Angular completo (node_modules del proyecto no están instalados).
+
+Validación runtime recomendada:
+  mvn clean test
+  ./scripts/generate-dev-certs.sh
+  docker compose config
+  docker compose up --build
+  ./scripts/verify-kafka-security.sh
+  ./scripts/rebuild-query-projections.sh

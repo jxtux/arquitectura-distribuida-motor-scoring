@@ -1,0 +1,1 @@
+package com.finanscore.scoring.infrastructure;import org.springframework.data.jpa.repository.JpaRepository; public interface SimulatedCreditProfileRepository extends JpaRepository<SimulatedCreditProfileEntity,Long>{}

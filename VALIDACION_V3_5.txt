@@ -1,0 +1,27 @@
+Motor Scoring Distribuido V3.5 — Validación realizada
+
+VALIDADO EN ESTE ENTORNO
+- YAML de Docker Compose y configuraciones: parse correcto.
+- XML de todos los pom.xml: parse correcto.
+- JSON del proyecto: parse correcto donde aplica.
+- Sintaxis Bash de scripts V3.5: correcta.
+- Generación real de secrets/bootstrap.env con aleatoriedad local: correcta.
+- Generación real de CA, certificados, JKS/PKCS12 y claves IAM con OpenSSL/keytool: correcta.
+- Limpieza posterior: el paquete final no contiene bootstrap.env, claves privadas, PEM privados, JKS ni P12 generados.
+- Todos los application.yml usan Spring Cloud Vault con authentication=APPROLE.
+- Ningún application.yml mantiene VAULT_TOKEN estático.
+- .env.example contiene únicamente configuración no sensible.
+- docker-compose.yml exige secretos desde secrets/bootstrap.env para PostgreSQL/Kafka/Redis/MinIO/Grafana/Vault bootstrap.
+- Root token de Vault solo está configurado para Vault/vault-init; los microservicios reciben AppRole role_id/secret_id.
+- Policies de Vault limitan cada microservicio a secret/finanscore/<service>.
+
+LIMITACIONES DEL ENTORNO DE GENERACIÓN
+- Docker CLI no está disponible aquí, por lo que no se ejecutó `docker compose up` ni `docker compose config` con Docker.
+- Maven CLI no está disponible aquí, por lo que no se ejecutó `mvn clean verify` completo.
+- PowerShell no está disponible aquí; el script PowerShell fue revisado estáticamente, mientras la variante Bash sí se ejecutó.
+
+ANTES DE PRODUCCIÓN
+- Reemplazar Vault dev mode por Vault server mode con storage persistente, TLS, HA/operación segura y estrategia de unseal.
+- Entregar AppRole secret_id mediante CI/CD, Vault Agent o identidad de workload, no mediante archivo local permanente.
+- No conservar secrets/bootstrap.env en hosts productivos.
+- Ejecutar pruebas integrales Docker/Maven/Testcontainers y verificar rotación/revocación de secretos.

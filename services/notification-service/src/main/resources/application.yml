@@ -1,0 +1,118 @@
+spring:
+  application:
+    name: notification-service
+  config:
+    import: ${SPRING_CONFIG_IMPORT:optional:vault://}
+  cloud:
+    vault:
+      uri: ${VAULT_URI:http://vault:8200}
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        app-role-path: approle
+      kv:
+        enabled: true
+        backend: secret
+        default-context: finanscore/notification-service
+        application-name: finanscore/notification-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/notification_db}
+    username: ${DB_USER:notification_user}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:29092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:SASL_SSL}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:SCRAM-SHA-512}
+      sasl.jaas.config: org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME:unset}" password="${KAFKA_PASSWORD}";
+      ssl.truststore.location: ${KAFKA_TRUSTSTORE_LOCATION:/run/secrets/client.truststore.jks}
+      ssl.truststore.password: ${KAFKA_TRUSTSTORE_PASSWORD}
+      ssl.truststore.type: JKS
+      ssl.endpoint.identification.algorithm: https
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${GMAIL_USERNAME:}
+    password: ${GMAIL_APP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+server:
+  port: ${SERVER_PORT:8086}
+management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+app:
+  security:
+    issuer: ${IAM_JWT_ISSUER:finanscore}
+    audience: ${IAM_JWT_AUDIENCE:motor-scoring-api}
+    public-key: ${IAM_RSA_PUBLIC_KEY:/run/secrets/iam-public.pem}
+  iam:
+    grpc-host: ${IAM_GRPC_HOST:iam-service}
+    grpc-port: ${IAM_GRPC_PORT:9091}
+    connect-timeout-ms: ${IAM_GRPC_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${IAM_GRPC_READ_TIMEOUT_MS:3000}
+    mtls:
+      ca-cert: ${IAM_GRPC_CA_CERT:/run/secrets/ca.crt}
+      client-cert: ${IAM_GRPC_CLIENT_CERT:/run/secrets/notification-grpc-client.crt}
+      client-key: ${IAM_GRPC_CLIENT_KEY:/run/secrets/notification-grpc-client.key}
+    oauth2:
+      token-uri: ${IAM_OAUTH2_TOKEN_URI:https://kong:8443/oauth2/token}
+      client-id: ${IAM_OAUTH2_CLIENT_ID:notification-service}
+      client-secret: ${OAUTH2_NOTIFICATION_CLIENT_SECRET}
+      scope: ${IAM_OAUTH2_SCOPE:iam.user.read}
+  mail:
+    from: ${IAM_MAIL_FROM:no-reply@finanscore.local}
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+    access-key: ${MINIO_ROOT_USER:minioadmin}
+    secret-key: ${MINIO_ROOT_PASSWORD}
+    bucket: scoring-reports
+resilience4j:
+  retry:
+    instances:
+      iamDirectory:
+        max-attempts: 3
+        wait-duration: 400ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.35
+  circuitbreaker:
+    instances:
+      iamDirectory:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+  bulkhead:
+    instances:
+      iamDirectory:
+        max-concurrent-calls: 10
+        max-wait-duration: 0

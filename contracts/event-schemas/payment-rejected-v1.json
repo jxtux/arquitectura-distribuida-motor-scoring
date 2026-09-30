@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "requestId",
+    "userId",
+    "reason"
+  ],
+  "properties": {
+    "requestId": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "userId": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

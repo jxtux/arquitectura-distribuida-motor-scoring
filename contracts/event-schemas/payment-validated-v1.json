@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "requestId",
+    "userId",
+    "paymentId",
+    "amount",
+    "currency"
+  ],
+  "properties": {
+    "requestId": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "userId": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "paymentId": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "amount": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "currency": {
+      "type": [
+        "string",
+        "number",
+        "integer",
+        "array",
+        "object",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,6 @@
+package com.finanscore.contracts;
+public final class EventTopics {
+  public static final String CREDIT_REQUEST_CREATED="credit.request.created.v1", PAYMENT_VALIDATED="payment.validated.v1", PAYMENT_REJECTED="payment.rejected.v1", CREDIT_EVALUATION_REQUESTED="credit.evaluation.requested.v1", SCORING_CALCULATED="scoring.calculated.v1", SCORING_FAILED="scoring.failed.v1", REPORT_GENERATED="report.generated.v1", REPORT_FAILED="report.failed.v1", NOTIFICATION_SENT="notification.sent.v1", NOTIFICATION_FAILED="notification.failed.v1", IAM_AUDIT="iam.audit.v1";
+  private EventTopics(){}
+  public static String fromType(String t){ return switch(t){case "CreditRequestCreated"->CREDIT_REQUEST_CREATED;case "PaymentValidated"->PAYMENT_VALIDATED;case "PaymentRejected"->PAYMENT_REJECTED;case "CreditEvaluationRequested"->CREDIT_EVALUATION_REQUESTED;case "ScoringCalculated"->SCORING_CALCULATED;case "ScoringFailed"->SCORING_FAILED;case "ReportGenerated"->REPORT_GENERATED;case "ReportGenerationFailed"->REPORT_FAILED;case "NotificationSent"->NOTIFICATION_SENT;case "NotificationFailed"->NOTIFICATION_FAILED;case "IamAuditEvent"->IAM_AUDIT;default->throw new IllegalArgumentException("Topic no configurado para "+t);}; }
+}

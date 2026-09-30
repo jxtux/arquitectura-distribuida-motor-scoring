@@ -1,0 +1,13 @@
+**/target/
+**/node_modules/
+**/.angular/
+**/dist/
+.env
+platform/certs/*
+!platform/certs/.gitignore
+*.log
+.idea/
+.vscode/
+secrets/bootstrap.env
+secrets/*.local
+platform/vault/runtime/

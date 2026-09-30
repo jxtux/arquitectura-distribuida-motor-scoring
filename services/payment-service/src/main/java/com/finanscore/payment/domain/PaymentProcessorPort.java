@@ -1,0 +1,1 @@
+package com.finanscore.payment.domain; public interface PaymentProcessorPort{PaymentDecision process(CardData card); record CardData(String brand,String number,String expiry,String cvv){} record PaymentDecision(boolean approved,String code,String message){}}

@@ -1,0 +1,1 @@
+package com.finanscore.payment.infrastructure;import org.springframework.data.jpa.repository.JpaRepository;import java.util.*; public interface PaymentRepository extends JpaRepository<PaymentEntity,UUID>{Optional<PaymentEntity> findByUserIdAndIdempotencyKey(Long userId,String key);}

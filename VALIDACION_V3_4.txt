@@ -1,0 +1,20 @@
+VALIDACION V3.4 - HashiCorp Vault
+
+Validaciones realizadas en este entorno:
+- XML de todos los pom.xml: OK.
+- YAML/YML, incluido docker-compose.yml y application.yml: OK.
+- JSON del proyecto: OK.
+- Sintaxis shell de platform/vault/init-vault.sh: OK.
+- Sintaxis shell de scripts/verify-vault.sh: OK.
+- Los 8 microservicios Spring Boot incluyen spring-cloud-starter-vault-config: OK.
+- Los 8 microservicios definen contexto Vault KV independiente: OK.
+- Docker Compose ya no entrega directamente DB_PASSWORD, KAFKA_PASSWORD ni KAFKA_TRUSTSTORE_PASSWORD a los contenedores de aplicación: OK.
+- Vault-init configura KV v2, políticas de mínimo privilegio y tokens demo por servicio: revisión estática OK.
+
+No ejecutado en este entorno:
+- mvn clean verify: Maven CLI no está instalado.
+- docker compose up --build: Docker CLI/daemon no está disponible.
+- Prueba runtime real Spring Cloud Vault -> Vault: requiere Docker/Maven.
+
+Nota de seguridad:
+Los tokens estáticos y Vault dev mode son solo para la demo local. Producción debe utilizar Vault con TLS, almacenamiento persistente y autenticación de workload/AppRole/Vault Agent; nunca root token en microservicios.

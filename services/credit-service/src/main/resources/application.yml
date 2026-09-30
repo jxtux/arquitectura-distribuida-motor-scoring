@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: credit-service
+  config:
+    import: ${SPRING_CONFIG_IMPORT:optional:vault://}
+  cloud:
+    vault:
+      uri: ${VAULT_URI:http://vault:8200}
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        app-role-path: approle
+      kv:
+        enabled: true
+        backend: secret
+        default-context: finanscore/credit-service
+        application-name: finanscore/credit-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/credit_db}
+    username: ${DB_USER:credit_user}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:29092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:SASL_SSL}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:SCRAM-SHA-512}
+      sasl.jaas.config: org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME:unset}" password="${KAFKA_PASSWORD}";
+      ssl.truststore.location: ${KAFKA_TRUSTSTORE_LOCATION:/run/secrets/client.truststore.jks}
+      ssl.truststore.password: ${KAFKA_TRUSTSTORE_PASSWORD}
+      ssl.truststore.type: JKS
+      ssl.endpoint.identification.algorithm: https
+server:
+  port: ${SERVER_PORT:8082}
+management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+app:
+  security:
+    issuer: ${IAM_JWT_ISSUER:finanscore}
+    audience: ${IAM_JWT_AUDIENCE:motor-scoring-api}
+    public-key: ${IAM_RSA_PUBLIC_KEY:/run/secrets/iam-public.pem}

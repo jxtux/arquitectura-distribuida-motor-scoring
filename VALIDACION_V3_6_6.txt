@@ -1,0 +1,18 @@
+V3.6.6 - PostgreSQL TLS
+
+Cambios preparados sobre V3.6.5:
+- PostgreSQL ssl=on.
+- Certificado postgres-server firmado por la CA de desarrollo ya generada por el proyecto.
+- Clave privada copiada dentro del contenedor con permisos 0600 antes del arranque.
+- pg_hba TLS-only para conexiones TCP: hostssl + SCRAM; hostnossl reject.
+- 8 DB_URL JDBC con sslmode=verify-full y sslrootcert=/run/secrets/ca.crt.
+- query-db-init usa PGSSLMODE=verify-full.
+- verify-postgres-tls.ps1/.sh verifica ssl=on, sesion TLS real y rechazo de plaintext.
+- verify-local-stack.ps1 incorpora la prueba PostgreSQL TLS.
+- Se mantiene sin cambios la capa JWT de Kong V3.6.5 y la seguridad Kafka SASL_SSL.
+
+Validacion realizada en el entorno de generacion:
+- YAML parseado estaticamente.
+- Rutas JDBC revisadas: 8/8 usan verify-full.
+- Material postgres-server ya forma parte de generate-dev-certs.ps1/.sh.
+- No se ejecuto Docker Engine en el entorno de generacion; la prueba runtime queda automatizada en verify-postgres-tls.ps1.

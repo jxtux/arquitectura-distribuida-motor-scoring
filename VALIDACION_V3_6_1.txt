@@ -1,0 +1,9 @@
+VALIDACION ESTATICA V3.6.1
+==========================
+
+- docker-compose.yml parseado como YAML: OK
+- Scoring: SPRING_PROFILES_ACTIVE=postgres
+- MinIO: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+- Vault init: manejo idempotente de SecretID duplicado
+- Frontend: alerta FAILED + error de polling
+- No se ejecutó el stack Docker completo en el entorno de generación.

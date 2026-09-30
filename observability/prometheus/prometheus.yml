@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: finanscore-services
+    scheme: https
+    metrics_path: /actuator/prometheus
+    tls_config:
+      ca_file: /run/secrets/ca.crt
+    static_configs:
+      - targets:
+          - iam-service:8081
+          - credit-service:8082
+          - payment-service:8083
+          - scoring-service:8084
+          - report-service:8085
+          - notification-service:8086
+          - audit-service:8087
+          - query-service:8088
+
+  - job_name: redis
+    static_configs:
+      - targets:
+          - redis-exporter:9121

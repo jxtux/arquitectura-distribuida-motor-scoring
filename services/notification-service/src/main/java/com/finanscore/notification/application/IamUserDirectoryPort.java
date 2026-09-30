@@ -1,0 +1,1 @@
+package com.finanscore.notification.application;public interface IamUserDirectoryPort{UserInfo get(Long id);record UserInfo(Long id,String name,String email,String status){}}

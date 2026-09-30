@@ -1,0 +1,23 @@
+V3.6.7 - VALIDACION DE ENTREGA
+
+Objetivo:
+- conservar V3.6.6;
+- habilitar HTTPS en los 8 microservicios Spring Boot;
+- cambiar los 6 upstreams de Kong a HTTPS;
+- verificar certificados upstream con la CA interna;
+- mantener JWT Kong + Spring Security;
+- mantener PostgreSQL TLS, Kafka SASL_SSL, Vault y gRPC mTLS existentes;
+- migrar desde V3.6.6 sin regenerar la CA ni las claves JWT si se copian certificados existentes.
+
+Validaciones incluidas en scripts:
+- verify-internal-https.ps1
+- verify-postgres-tls.ps1
+- verify-kong-jwt.ps1
+- verify-local-stack.ps1
+
+Nota: la validacion runtime requiere Docker Engine en el equipo destino.
+
+FIX FINAL PowerShell 5.1 (PostgreSQL TLS)
+- verify-postgres-tls.ps1 descarta dentro del contenedor el stderr esperado de la prueba PGSSLMODE=disable.
+- Evita NativeCommandError en Windows PowerShell 5.1 cuando PostgreSQL rechaza correctamente una conexion sin TLS.
+- Verificacion esperada: ssl=on, verify-full OK, TLS negociado y conexion plaintext rechazada.

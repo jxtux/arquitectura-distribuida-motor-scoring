@@ -1,0 +1,768 @@
+name: motor-scoring-distributed-v3-6-8-1
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_SUPER_PASSWORD:?set POSTGRES_SUPER_PASSWORD in secrets/bootstrap.env}
+      IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:?set IAM_DB_PASSWORD in secrets/bootstrap.env}
+      CREDIT_DB_PASSWORD: ${CREDIT_DB_PASSWORD:?set CREDIT_DB_PASSWORD in secrets/bootstrap.env}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?set PAYMENT_DB_PASSWORD in secrets/bootstrap.env}
+      SCORING_DB_PASSWORD: ${SCORING_DB_PASSWORD:?set SCORING_DB_PASSWORD in secrets/bootstrap.env}
+      REPORT_DB_PASSWORD: ${REPORT_DB_PASSWORD:?set REPORT_DB_PASSWORD in secrets/bootstrap.env}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in secrets/bootstrap.env}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:?set AUDIT_DB_PASSWORD in secrets/bootstrap.env}
+      QUERY_DB_PASSWORD: ${QUERY_DB_PASSWORD:?set QUERY_DB_PASSWORD in secrets/bootstrap.env}
+      POSTGRES_SUPER_PASSWORD: ${POSTGRES_SUPER_PASSWORD:?set POSTGRES_SUPER_PASSWORD in secrets/bootstrap.env}
+    entrypoint:
+    - /bin/bash
+    - /opt/finanscore/start-postgres-tls.sh
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    - ./platform/postgres/init:/docker-entrypoint-initdb.d:ro
+    - ./platform/postgres/start-postgres-tls.sh:/opt/finanscore/start-postgres-tls.sh:ro
+    - ./platform/postgres/pg_hba_tls.conf:/opt/finanscore/pg_hba_tls.conf:ro
+    - ./platform/certs:/run/secrets:ro
+    ports:
+    - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - PGSSLMODE=require pg_isready -h postgres -U postgres -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  query-db-init:
+    image: postgres:17
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_SUPER_PASSWORD: ${POSTGRES_SUPER_PASSWORD:?set POSTGRES_SUPER_PASSWORD in secrets/bootstrap.env}
+      QUERY_DB_PASSWORD: ${QUERY_DB_PASSWORD:?set QUERY_DB_PASSWORD in secrets/bootstrap.env}
+      PGSSLMODE: verify-full
+      PGSSLROOTCERT: /run/secrets/ca.crt
+    entrypoint:
+    - /bin/bash
+    - /opt/finanscore/ensure-query-db.sh
+    volumes:
+    - ./platform/postgres/ensure-query-db.sh:/opt/finanscore/ensure-query-db.sh:ro
+    - ./platform/certs:/run/secrets:ro
+    restart: 'no'
+  redis:
+    image: redis:7.4-alpine
+    command:
+    - sh
+    - -c
+    - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in secrets/bootstrap.env}
+    volumes:
+    - redis_data:/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  kafka:
+    build:
+      context: .
+      dockerfile: platform/kafka/Dockerfile
+    image: motor-scoring-kafka-secure:3.6
+    environment:
+      KAFKA_CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_SSL_KEY_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:?set KAFKA_ADMIN_PASSWORD in secrets/bootstrap.env}
+      KAFKA_BROKER_PASSWORD: ${KAFKA_BROKER_PASSWORD:?set KAFKA_BROKER_PASSWORD in secrets/bootstrap.env}
+      KAFKA_IAM_PASSWORD: ${KAFKA_IAM_PASSWORD:?set KAFKA_IAM_PASSWORD in secrets/bootstrap.env}
+      KAFKA_CREDIT_PASSWORD: ${KAFKA_CREDIT_PASSWORD:?set KAFKA_CREDIT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_PAYMENT_PASSWORD: ${KAFKA_PAYMENT_PASSWORD:?set KAFKA_PAYMENT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_SCORING_PASSWORD: ${KAFKA_SCORING_PASSWORD:?set KAFKA_SCORING_PASSWORD in secrets/bootstrap.env}
+      KAFKA_REPORT_PASSWORD: ${KAFKA_REPORT_PASSWORD:?set KAFKA_REPORT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_NOTIFICATION_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD:?set KAFKA_NOTIFICATION_PASSWORD in secrets/bootstrap.env}
+      KAFKA_AUDIT_PASSWORD: ${KAFKA_AUDIT_PASSWORD:?set KAFKA_AUDIT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_QUERY_PASSWORD: ${KAFKA_QUERY_PASSWORD:?set KAFKA_QUERY_PASSWORD in secrets/bootstrap.env}
+      KAFKA_SCHEMA_REGISTRY_PASSWORD: ${KAFKA_SCHEMA_REGISTRY_PASSWORD:?set KAFKA_SCHEMA_REGISTRY_PASSWORD in secrets/bootstrap.env}
+    ports:
+    - "${KAFKA_HOST_PORT:-9092}:9092"
+    volumes:
+    - kafka_data:/var/lib/kafka/data
+    - ./platform/certs:/etc/kafka/secrets:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:29092 --command-config /etc/kafka/client/admin.properties
+        >/dev/null 2>&1
+      interval: 5s
+      timeout: 10s
+      retries: 40
+  kafka-init:
+    image: motor-scoring-kafka-secure:3.6
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+    - /opt/kafka/init-topics-acls.sh
+    environment:
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:?set KAFKA_ADMIN_PASSWORD in secrets/bootstrap.env}
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_QUERY_PASSWORD: ${KAFKA_QUERY_PASSWORD:?set KAFKA_QUERY_PASSWORD in secrets/bootstrap.env}
+    volumes:
+    - ./platform/certs:/etc/kafka/secrets:ro
+    restart: 'no'
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.8.0
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: SASL_SSL://kafka:29092
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: SASL_SSL
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_MECHANISM: SCRAM-SHA-512
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="schema-registry"
+        password="${KAFKA_SCHEMA_REGISTRY_PASSWORD:?set KAFKA_SCHEMA_REGISTRY_PASSWORD in secrets/bootstrap.env}";
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/client.truststore.jks
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_TRUSTSTORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_TRUSTSTORE_TYPE: JKS
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: https
+      SCHEMA_REGISTRY_KAFKASTORE_GROUP_ID: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    ports:
+    - "${SCHEMA_REGISTRY_HOST_PORT:-8088}:8081"
+    volumes:
+    - ./platform/certs:/etc/kafka/secrets:ro
+  minio:
+    restart: unless-stopped
+    build:
+      context: ./platform/minio
+      dockerfile: Dockerfile
+    image: finanscore-minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in secrets/bootstrap.env}
+    ports:
+    - "${MINIO_API_HOST_PORT:-9000}:9000"
+    - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    volumes:
+    - minio_data:/data
+  vault:
+    image: hashicorp/vault:1.20
+    cap_add:
+    - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:?set VAULT_DEV_ROOT_TOKEN_ID in secrets/bootstrap.env}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    command: server -dev
+    ports:
+    - "${VAULT_HOST_PORT:-8200}:8200"
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - VAULT_ADDR=http://127.0.0.1:8200 vault status >/dev/null 2>&1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  vault-init:
+    image: hashicorp/vault:1.20
+    depends_on:
+      vault:
+        condition: service_healthy
+    entrypoint:
+    - /bin/sh
+    - /opt/finanscore/init-vault.sh
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:?set VAULT_DEV_ROOT_TOKEN_ID in secrets/bootstrap.env}
+      DEV_CERT_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_IAM_PASSWORD: ${KAFKA_IAM_PASSWORD:?set KAFKA_IAM_PASSWORD in secrets/bootstrap.env}
+      KAFKA_CREDIT_PASSWORD: ${KAFKA_CREDIT_PASSWORD:?set KAFKA_CREDIT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_PAYMENT_PASSWORD: ${KAFKA_PAYMENT_PASSWORD:?set KAFKA_PAYMENT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_SCORING_PASSWORD: ${KAFKA_SCORING_PASSWORD:?set KAFKA_SCORING_PASSWORD in secrets/bootstrap.env}
+      KAFKA_REPORT_PASSWORD: ${KAFKA_REPORT_PASSWORD:?set KAFKA_REPORT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_NOTIFICATION_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD:?set KAFKA_NOTIFICATION_PASSWORD in secrets/bootstrap.env}
+      KAFKA_AUDIT_PASSWORD: ${KAFKA_AUDIT_PASSWORD:?set KAFKA_AUDIT_PASSWORD in secrets/bootstrap.env}
+      KAFKA_QUERY_PASSWORD: ${KAFKA_QUERY_PASSWORD:?set KAFKA_QUERY_PASSWORD in secrets/bootstrap.env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in secrets/bootstrap.env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in secrets/bootstrap.env}
+      IAM_DEMO_PASSWORD: ${IAM_DEMO_PASSWORD:?set IAM_DEMO_PASSWORD in secrets/bootstrap.env}
+      IAM_ADMIN_PASSWORD: ${IAM_ADMIN_PASSWORD:?set IAM_ADMIN_PASSWORD in secrets/bootstrap.env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:?set IAM_DB_PASSWORD in secrets/bootstrap.env}
+      CREDIT_DB_PASSWORD: ${CREDIT_DB_PASSWORD:?set CREDIT_DB_PASSWORD in secrets/bootstrap.env}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?set PAYMENT_DB_PASSWORD in secrets/bootstrap.env}
+      SCORING_DB_PASSWORD: ${SCORING_DB_PASSWORD:?set SCORING_DB_PASSWORD in secrets/bootstrap.env}
+      REPORT_DB_PASSWORD: ${REPORT_DB_PASSWORD:?set REPORT_DB_PASSWORD in secrets/bootstrap.env}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in secrets/bootstrap.env}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:?set AUDIT_DB_PASSWORD in secrets/bootstrap.env}
+      QUERY_DB_PASSWORD: ${QUERY_DB_PASSWORD:?set QUERY_DB_PASSWORD in secrets/bootstrap.env}
+      VAULT_IAM_ROLE_ID: ${VAULT_IAM_ROLE_ID:?set VAULT_IAM_ROLE_ID in secrets/bootstrap.env}
+      VAULT_IAM_SECRET_ID: ${VAULT_IAM_SECRET_ID:?set VAULT_IAM_SECRET_ID in secrets/bootstrap.env}
+      VAULT_CREDIT_ROLE_ID: ${VAULT_CREDIT_ROLE_ID:?set VAULT_CREDIT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_CREDIT_SECRET_ID: ${VAULT_CREDIT_SECRET_ID:?set VAULT_CREDIT_SECRET_ID in secrets/bootstrap.env}
+      VAULT_PAYMENT_ROLE_ID: ${VAULT_PAYMENT_ROLE_ID:?set VAULT_PAYMENT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_PAYMENT_SECRET_ID: ${VAULT_PAYMENT_SECRET_ID:?set VAULT_PAYMENT_SECRET_ID in secrets/bootstrap.env}
+      VAULT_SCORING_ROLE_ID: ${VAULT_SCORING_ROLE_ID:?set VAULT_SCORING_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SCORING_SECRET_ID: ${VAULT_SCORING_SECRET_ID:?set VAULT_SCORING_SECRET_ID in secrets/bootstrap.env}
+      VAULT_REPORT_ROLE_ID: ${VAULT_REPORT_ROLE_ID:?set VAULT_REPORT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_REPORT_SECRET_ID: ${VAULT_REPORT_SECRET_ID:?set VAULT_REPORT_SECRET_ID in secrets/bootstrap.env}
+      VAULT_NOTIFICATION_ROLE_ID: ${VAULT_NOTIFICATION_ROLE_ID:?set VAULT_NOTIFICATION_ROLE_ID in secrets/bootstrap.env}
+      VAULT_NOTIFICATION_SECRET_ID: ${VAULT_NOTIFICATION_SECRET_ID:?set VAULT_NOTIFICATION_SECRET_ID in secrets/bootstrap.env}
+      VAULT_AUDIT_ROLE_ID: ${VAULT_AUDIT_ROLE_ID:?set VAULT_AUDIT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_AUDIT_SECRET_ID: ${VAULT_AUDIT_SECRET_ID:?set VAULT_AUDIT_SECRET_ID in secrets/bootstrap.env}
+      VAULT_QUERY_ROLE_ID: ${VAULT_QUERY_ROLE_ID:?set VAULT_QUERY_ROLE_ID in secrets/bootstrap.env}
+      VAULT_QUERY_SECRET_ID: ${VAULT_QUERY_SECRET_ID:?set VAULT_QUERY_SECRET_ID in secrets/bootstrap.env}
+      OAUTH2_NOTIFICATION_CLIENT_SECRET: ${OAUTH2_NOTIFICATION_CLIENT_SECRET:?set OAUTH2_NOTIFICATION_CLIENT_SECRET in secrets/bootstrap.env}
+    volumes:
+    - ./platform/vault/init-vault.sh:/opt/finanscore/init-vault.sh:ro
+    restart: 'no'
+  iam-service:
+    build:
+      context: .
+      dockerfile: services/iam-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/iam-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/iam_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: iam_user
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      IAM_RSA_PRIVATE_KEY: /run/secrets/iam-private.pem
+      IAM_RSA_PUBLIC_KEY: /run/secrets/iam-public.pem
+      IAM_TOTP_AES_KEY: file:/run/secrets/iam-totp-aes.key
+      IAM_VERIFICATION_PEPPER: file:/run/secrets/iam-verification-pepper.txt
+      IAM_REFRESH_COOKIE_SECURE: ${IAM_REFRESH_COOKIE_SECURE:-false}
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      OTEL_SERVICE_NAME: iam-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      IAM_ADMIN_EMAIL: ${IAM_ADMIN_EMAIL:-admin@finanscore.local}
+      IAM_ADMIN_DISPLAY_NAME: ${IAM_ADMIN_DISPLAY_NAME:-Administrador Demo}
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: iam-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      IAM_MAIL_FROM: ${IAM_MAIL_FROM:-no-reply@finanscore.local}
+      IAM_FRONTEND_SOCIAL_CALLBACK: ${IAM_FRONTEND_SOCIAL_CALLBACK:-http://localhost:4200/auth/social-callback}
+      IAM_REFRESH_COOKIE_SAME_SITE: ${IAM_REFRESH_COOKIE_SAME_SITE:-Lax}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-not-configured}
+      TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-not-configured}
+      TIKTOK_REDIRECT_URI: ${TIKTOK_REDIRECT_URI:-https://localhost:8443/api/v1/auth/social/tiktok/callback}
+      VAULT_ROLE_ID: ${VAULT_IAM_ROLE_ID:?set VAULT_IAM_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_IAM_SECRET_ID:?set VAULT_IAM_SECRET_ID in secrets/bootstrap.env}
+      IAM_GRPC_PORT: '9091'
+      IAM_GRPC_SERVER_CERT: /run/secrets/iam-grpc-server.crt
+      IAM_GRPC_SERVER_KEY: /run/secrets/iam-grpc-server.key
+      IAM_GRPC_CA_CERT: /run/secrets/ca.crt
+      IAM_INTERNAL_OAUTH_ISSUER: https://localhost:8443
+      IAM_INTERNAL_OAUTH_AUDIENCE: iam-grpc
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+    expose:
+    - '9091'
+  credit-service:
+    build:
+      context: .
+      dockerfile: services/credit-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      iam-service:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/credit-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/credit_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: credit_user
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      IAM_RSA_PUBLIC_KEY: /run/secrets/iam-public.pem
+      OTEL_SERVICE_NAME: credit-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: credit-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      VAULT_ROLE_ID: ${VAULT_CREDIT_ROLE_ID:?set VAULT_CREDIT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_CREDIT_SECRET_ID:?set VAULT_CREDIT_SECRET_ID in secrets/bootstrap.env}
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      iam-service:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/payment-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/payment_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: payment_user
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      IAM_RSA_PUBLIC_KEY: /run/secrets/iam-public.pem
+      OTEL_SERVICE_NAME: payment-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: payment-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      VAULT_ROLE_ID: ${VAULT_PAYMENT_ROLE_ID:?set VAULT_PAYMENT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_PAYMENT_SECRET_ID:?set VAULT_PAYMENT_SECRET_ID in secrets/bootstrap.env}
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+  scoring-service:
+    build:
+      context: .
+      dockerfile: services/scoring-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/scoring-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/scoring_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: scoring_user
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      OTEL_SERVICE_NAME: scoring-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: scoring-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      VAULT_ROLE_ID: ${VAULT_SCORING_ROLE_ID:?set VAULT_SCORING_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_SCORING_SECRET_ID:?set VAULT_SCORING_SECRET_ID in secrets/bootstrap.env}
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+  report-service:
+    build:
+      context: .
+      dockerfile: services/report-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/report-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/report_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: report_user
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      IAM_RSA_PUBLIC_KEY: /run/secrets/iam-public.pem
+      OTEL_SERVICE_NAME: report-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: report-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      VAULT_ROLE_ID: ${VAULT_REPORT_ROLE_ID:?set VAULT_REPORT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_REPORT_SECRET_ID:?set VAULT_REPORT_SECRET_ID in secrets/bootstrap.env}
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      iam-service:
+        condition: service_started
+      minio:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+      kong:
+        condition: service_healthy
+    environment:
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/notification-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/notification_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: notification_user
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      IAM_RSA_PUBLIC_KEY: /run/secrets/iam-public.pem
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      OTEL_SERVICE_NAME: notification-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: notification-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      IAM_MAIL_FROM: ${IAM_MAIL_FROM:-no-reply@finanscore.local}
+      VAULT_ROLE_ID: ${VAULT_NOTIFICATION_ROLE_ID:?set VAULT_NOTIFICATION_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_NOTIFICATION_SECRET_ID:?set VAULT_NOTIFICATION_SECRET_ID in secrets/bootstrap.env}
+      IAM_GRPC_HOST: iam-service
+      IAM_GRPC_PORT: '9091'
+      IAM_GRPC_CA_CERT: /run/secrets/ca.crt
+      IAM_GRPC_CLIENT_CERT: /run/secrets/notification-grpc-client.crt
+      IAM_GRPC_CLIENT_KEY: /run/secrets/notification-grpc-client.key
+      IAM_OAUTH2_TOKEN_URI: https://kong:8443/oauth2/token
+      IAM_OAUTH2_CLIENT_ID: notification-service
+      IAM_OAUTH2_SCOPE: iam.user.read
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+  audit-service:
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/audit-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/audit_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: audit_user
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      IAM_RSA_PUBLIC_KEY: /run/secrets/iam-public.pem
+      OTEL_SERVICE_NAME: audit-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      GRAFANA_PUBLIC_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:3000}
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: audit-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      VAULT_ROLE_ID: ${VAULT_AUDIT_ROLE_ID:?set VAULT_AUDIT_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_AUDIT_SECRET_ID:?set VAULT_AUDIT_SECRET_ID in secrets/bootstrap.env}
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+  query-service:
+    build:
+      context: .
+      dockerfile: services/query-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      query-db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+    environment:
+      VAULT_URI: http://vault:8200
+      SPRING_CONFIG_IMPORT: vault://
+      # V3.6.7: HTTPS interno para la interfaz HTTP del microservicio.
+      SERVER_SSL_ENABLED: 'true'
+      SERVER_SSL_KEY_STORE: file:/run/secrets/query-service-https.p12
+      SERVER_SSL_KEY_STORE_TYPE: PKCS12
+      SERVER_SSL_KEY_STORE_PASSWORD: ${DEV_CERT_PASSWORD:?set DEV_CERT_PASSWORD in secrets/bootstrap.env}
+      SERVER_SSL_ENABLED_PROTOCOLS: TLSv1.2,TLSv1.3
+      DB_URL: "jdbc:postgresql://postgres:5432/query_db?sslmode=verify-full&sslrootcert=/run/secrets/ca.crt"
+      DB_USER: query_user
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QUERY_CACHE_TTL_SECONDS: ${QUERY_CACHE_TTL_SECONDS:-60}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_USERNAME: query-service
+      KAFKA_TRUSTSTORE_LOCATION: /run/secrets/client.truststore.jks
+      IAM_RSA_PUBLIC_KEY: /run/secrets/iam-public.pem
+      OTEL_SERVICE_NAME: query-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=finanscore,deployment.environment=local
+      OTEL_INSTRUMENTATION_LOGBACK_MDC_ADD_BAGGAGE: 'true'
+      VAULT_ROLE_ID: ${VAULT_QUERY_ROLE_ID:?set VAULT_QUERY_ROLE_ID in secrets/bootstrap.env}
+      VAULT_SECRET_ID: ${VAULT_QUERY_SECRET_ID:?set VAULT_QUERY_SECRET_ID in secrets/bootstrap.env}
+    volumes:
+    - ./platform/certs:/run/secrets:ro
+  kong:
+    image: kong:3.9.3
+    environment:
+      KONG_DATABASE: 'off'
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_PROXY_LISTEN: 0.0.0.0:8443 ssl
+      KONG_SSL_CERT: /run/secrets/kong-server.crt
+      KONG_SSL_CERT_KEY: /run/secrets/kong-server.key
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    volumes:
+    - ./gateway/kong/kong.yml:/kong/kong.yml:ro
+    - ./platform/certs:/run/secrets:ro
+    ports:
+    - "${KONG_HTTPS_HOST_PORT:-8443}:8443"
+    - "${KONG_ADMIN_HOST_PORT:-8001}:8001"
+    depends_on:
+      iam-service:
+        condition: service_started
+      credit-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      report-service:
+        condition: service_started
+      audit-service:
+        condition: service_started
+      query-service:
+        condition: service_started
+    healthcheck:
+      test:
+      - CMD
+      - kong
+      - health
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  frontend-angular:
+    build:
+      context: ./frontend-angular
+      dockerfile: Dockerfile
+    ports:
+    - "${FRONTEND_HOST_PORT:-4200}:80"
+    depends_on:
+      kong:
+        condition: service_healthy
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.86.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in secrets/bootstrap.env}
+    depends_on:
+      redis:
+        condition: service_healthy
+  prometheus:
+    restart: unless-stopped
+    image: prom/prometheus:v3.14.0
+    volumes:
+    - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - ./platform/certs:/run/secrets:ro
+    - prometheus_data:/prometheus
+    ports:
+    - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+  grafana:
+    restart: unless-stopped
+    image: grafana/grafana:13.2.2
+    volumes:
+    - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    - grafana_data:/var/lib/grafana
+    ports:
+    - "${GRAFANA_HOST_PORT:-3000}:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in secrets/bootstrap.env}
+  loki:
+    restart: unless-stopped
+    image: grafana/loki:3.7.8
+    command:
+    - -config.file=/etc/loki/config.yml
+    volumes:
+    - ./observability/loki/loki-config.yml:/etc/loki/config.yml:ro
+    - loki_data:/loki
+    ports:
+    - "${LOKI_HOST_PORT:-3100}:3100"
+    user: 0:0
+  tempo:
+    restart: unless-stopped
+    image: grafana/tempo:2.10.8
+    command:
+    - -config.file=/etc/tempo.yaml
+    volumes:
+    - ./observability/tempo.yml:/etc/tempo.yaml:ro
+    - tempo_data:/var/tempo
+    ports:
+    - "${TEMPO_HOST_PORT:-3200}:3200"
+    user: 0:0
+  otel-collector:
+    restart: unless-stopped
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    command:
+    - --config=/etc/otelcol/config.yml
+    volumes:
+    - ./observability/otel-collector/otel-collector.yml:/etc/otelcol/config.yml:ro
+    ports:
+    - "${OTEL_GRPC_HOST_PORT:-4317}:4317"
+    - "${OTEL_HTTP_HOST_PORT:-4318}:4318"
+    - "${OTEL_HEALTH_HOST_PORT:-13133}:13133"
+    depends_on:
+      tempo:
+        condition: service_started
+  alloy:
+    restart: unless-stopped
+    image: grafana/alloy:v1.20.0
+    command:
+    - run
+    - --server.http.listen-addr=0.0.0.0:12345
+    - /etc/alloy/config.alloy
+    volumes:
+    - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+    - "${ALLOY_HOST_PORT:-12345}:12345"
+    depends_on:
+      loki:
+        condition: service_started
+    user: 0:0
+volumes:
+  postgres_data: null
+  redis_data: null
+  kafka_data: null
+  minio_data: null
+  prometheus_data: null
+  loki_data: null
+  tempo_data: null
+  grafana_data: null
