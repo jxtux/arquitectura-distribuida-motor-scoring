@@ -2554,3 +2554,701 @@ Docker Compose para despliegue local
 ```
 
 La arquitectura mantiene el dominio desacoplado de infraestructura, protege las comunicaciones, tolera fallos y duplicados, evita el acoplamiento directo entre bases de datos y permite observar el comportamiento completo del sistema.
+
+---
+
+# 35. Diagrama de Arquitectura de Software
+
+> Los siguientes diagramas usan **Mermaid**, formato soportado directamente por GitHub dentro de archivos `README.md`.
+
+## Arquitectura general
+
+```mermaid
+flowchart TB
+
+    U[Usuario]
+    FE[Angular 20<br/>Frontend]
+    KONG[Kong API Gateway<br/>HTTPS · JWT · CORS · Rate Limit]
+
+    IAM[IAM Service<br/>8081]
+    CREDIT[Credit Service<br/>8082]
+    PAYMENT[Payment Service<br/>8083]
+    SCORING[Scoring Service<br/>8084]
+    REPORT[Report Service<br/>8085]
+    NOTIF[Notification Service<br/>8086]
+    AUDIT[Audit Service<br/>8087]
+    QUERY[Query Service<br/>8088]
+
+    KAFKA[(Apache Kafka<br/>SASL_SSL · SCRAM · ACL)]
+    SR[Schema Registry]
+    REDIS[(Redis)]
+    MINIO[(MinIO<br/>PDF)]
+    VAULT[HashiCorp Vault]
+
+    IAMDB[(iam_db)]
+    CREDITDB[(credit_db)]
+    PAYMENTDB[(payment_db)]
+    SCORINGDB[(scoring_db)]
+    REPORTDB[(report_db)]
+    NOTIFDB[(notification_db)]
+    AUDITDB[(audit_db)]
+    QUERYDB[(query_db)]
+
+    PROM[Prometheus]
+    LOKI[Loki]
+    TEMPO[Tempo]
+    OTEL[OpenTelemetry Collector]
+    ALLOY[Grafana Alloy]
+    GRAFANA[Grafana]
+
+    U --> FE
+    FE -->|HTTPS + JWT| KONG
+
+    KONG -->|HTTPS + TLS verify| IAM
+    KONG -->|HTTPS + TLS verify| CREDIT
+    KONG -->|HTTPS + TLS verify| PAYMENT
+    KONG -->|HTTPS + TLS verify| REPORT
+    KONG -->|HTTPS + TLS verify| QUERY
+    KONG -->|HTTPS + TLS verify| AUDIT
+
+    IAM --> IAMDB
+    CREDIT --> CREDITDB
+    PAYMENT --> PAYMENTDB
+    SCORING --> SCORINGDB
+    REPORT --> REPORTDB
+    NOTIF --> NOTIFDB
+    AUDIT --> AUDITDB
+    QUERY --> QUERYDB
+
+    QUERY --> REDIS
+    REPORT --> MINIO
+
+    CREDIT <--> KAFKA
+    PAYMENT <--> KAFKA
+    SCORING <--> KAFKA
+    REPORT <--> KAFKA
+    NOTIF <--> KAFKA
+    QUERY <--> KAFKA
+    AUDIT <--> KAFKA
+
+    SR --- KAFKA
+
+    NOTIF -->|gRPC + mTLS + OAuth2 Client Credentials| IAM
+
+    VAULT -. secretos/AppRole .-> IAM
+    VAULT -. secretos/AppRole .-> CREDIT
+    VAULT -. secretos/AppRole .-> PAYMENT
+    VAULT -. secretos/AppRole .-> SCORING
+    VAULT -. secretos/AppRole .-> REPORT
+    VAULT -. secretos/AppRole .-> NOTIF
+    VAULT -. secretos/AppRole .-> AUDIT
+    VAULT -. secretos/AppRole .-> QUERY
+
+    IAM --> OTEL
+    CREDIT --> OTEL
+    PAYMENT --> OTEL
+    SCORING --> OTEL
+    REPORT --> OTEL
+    NOTIF --> OTEL
+    AUDIT --> OTEL
+    QUERY --> OTEL
+
+    IAM -. métricas .-> PROM
+    CREDIT -. métricas .-> PROM
+    PAYMENT -. métricas .-> PROM
+    SCORING -. métricas .-> PROM
+    REPORT -. métricas .-> PROM
+    NOTIF -. métricas .-> PROM
+    AUDIT -. métricas .-> PROM
+    QUERY -. métricas .-> PROM
+
+    OTEL --> TEMPO
+    ALLOY --> LOKI
+
+    PROM --> GRAFANA
+    LOKI --> GRAFANA
+    TEMPO --> GRAFANA
+```
+
+### Lectura del diagrama
+
+```text
+Usuario
+   ↓
+Angular
+   ↓ HTTPS + JWT
+Kong
+   ↓
+Microservicios
+   ↓
+Kafka como backbone asíncrono
+   ↓
+Database per Service
+```
+
+Además:
+
+```text
+Report Service       → MinIO
+Query Service        → Redis
+Notification Service → IAM mediante gRPC + mTLS + OAuth2
+Todos los servicios  → Observabilidad
+Todos los servicios  → Vault para secretos
+```
+
+---
+
+# 36. Diagrama de Secuencia — Autenticación
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor U as Usuario
+    participant A as Angular
+    participant K as Kong
+    participant IAM as IAM Service
+    participant DB as iam_db
+    participant MFA as MFA/TOTP
+
+    U->>A: Ingresa email y contraseña
+    A->>K: POST /api/v1/auth/login
+    K->>IAM: Reenvía solicitud por HTTPS
+
+    IAM->>DB: Buscar usuario por email
+    DB-->>IAM: Usuario + credencial hash
+
+    IAM->>IAM: Verificar contraseña con Argon2
+
+    alt Credenciales inválidas
+        IAM-->>K: 401 Unauthorized
+        K-->>A: Error de autenticación
+        A-->>U: Mostrar credenciales inválidas
+    else Credenciales válidas
+        IAM->>MFA: Validar estado MFA
+
+        alt MFA requerido
+            IAM-->>K: MFA_REQUIRED
+            K-->>A: Solicitar segundo factor
+            U->>A: Ingresa código TOTP
+            A->>K: Enviar código MFA
+            K->>IAM: Validar MFA
+            IAM->>IAM: Validar TOTP
+        end
+
+        IAM->>IAM: Emitir JWT RS256
+        IAM-->>K: Access Token
+        K-->>A: JWT
+        A-->>U: Sesión iniciada
+    end
+```
+
+## Uso posterior del JWT
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor U as Usuario
+    participant A as Angular
+    participant K as Kong
+    participant S as Microservicio
+    participant DB as Base propia
+
+    U->>A: Ejecuta una operación
+    A->>K: HTTPS + Authorization: Bearer JWT
+
+    K->>K: Validar JWT
+    alt JWT inválido
+        K-->>A: 401
+    else JWT válido
+        K->>S: HTTPS + JWT
+        S->>S: Spring Security vuelve a validar JWT
+        alt JWT/roles inválidos
+            S-->>K: 401 / 403
+        else Autorizado
+            S->>DB: Operación de negocio
+            DB-->>S: Resultado
+            S-->>K: Respuesta
+            K-->>A: Respuesta
+        end
+    end
+```
+
+Esto representa la defensa en profundidad:
+
+```text
+Kong valida el token en el perímetro
+            +
+Spring Security lo vuelve a validar dentro del microservicio
+```
+
+---
+
+# 37. Diagrama de Secuencia — Flujo principal de Scoring
+
+Este es el flujo distribuido principal del sistema.
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor U as Usuario
+    participant A as Angular
+    participant K as Kong
+    participant C as Credit Service
+    participant CDB as credit_db
+    participant P as Payment Service
+    participant PDB as payment_db
+    participant KF as Kafka
+    participant S as Scoring Service
+    participant B as CreditDataProvider
+    participant SDB as scoring_db
+    participant R as Report Service
+    participant M as MinIO
+    participant N as Notification Service
+    participant IAM as IAM Service
+    participant Q as Query Service
+    participant QDB as query_db
+
+    U->>A: Completa datos de solicitud
+    A->>K: POST Credit Request + JWT
+    K->>C: HTTPS
+    C->>CDB: Guardar solicitud + Outbox
+    CDB-->>C: Commit
+    C-->>A: Solicitud creada
+
+    C->>KF: Publicar CreditRequestCreated
+
+    U->>A: Confirma pago
+    A->>K: POST Payment + Idempotency-Key
+    K->>P: HTTPS
+    P->>P: Validar datos y pago simulado
+    P->>PDB: Guardar pago + Outbox
+    PDB-->>P: Commit
+
+    alt Pago rechazado
+        P->>KF: PaymentRejected
+        P-->>A: Pago rechazado
+    else Pago aprobado
+        P->>KF: PaymentValidated
+        P-->>A: Pago aprobado
+
+        KF-->>C: PaymentValidated
+        C->>CDB: Actualizar estado
+        C->>CDB: Guardar Outbox
+        C->>KF: CreditEvaluationRequested
+
+        KF-->>S: CreditEvaluationRequested
+        S->>B: Obtener perfil crediticio
+        B-->>S: Datos financieros sintéticos
+        S->>S: Ejecutar CalculadorScoring
+        S->>SDB: Guardar resultado + Outbox
+        S->>KF: ScoringCalculated
+
+        KF-->>R: ScoringCalculated
+        R->>R: Generar PDF
+        R->>M: Guardar PDF
+        M-->>R: Referencia del objeto
+        R->>KF: ReportGenerated
+
+        KF-->>N: ReportGenerated
+        N->>IAM: gRPC + mTLS + OAuth2
+        IAM-->>N: Datos del usuario
+        N->>N: Enviar notificación/email
+        N->>KF: NotificationSent
+
+        KF-->>Q: Eventos del workflow
+        Q->>QDB: Actualizar Read Model
+    end
+```
+
+## Idea principal
+
+```text
+Credit
+   ↓
+Kafka
+   ↓
+Payment
+   ↓
+Kafka
+   ↓
+Scoring
+   ↓
+Kafka
+   ↓
+Report
+   ↓
+Kafka
+   ↓
+Notification
+```
+
+No existe un orquestador central.
+
+Cada servicio:
+
+```text
+consume
+  ↓
+procesa
+  ↓
+persiste
+  ↓
+publica el siguiente evento
+```
+
+Esto implementa una **Saga por coreografía**.
+
+---
+
+# 38. Diagrama de Secuencia — Transactional Outbox
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant APP as Microservicio
+    participant DB as PostgreSQL
+    participant OUT as Outbox Publisher
+    participant KF as Kafka
+
+    APP->>DB: BEGIN TRANSACTION
+    APP->>DB: Guardar cambio de negocio
+    APP->>DB: Guardar evento Outbox PENDING
+    APP->>DB: COMMIT
+
+    Note over APP,DB: Estado y evento quedan confirmados juntos
+
+    OUT->>DB: Buscar Outbox PENDING
+    DB-->>OUT: Eventos pendientes
+
+    OUT->>KF: Publicar evento
+
+    alt Publicación exitosa
+        KF-->>OUT: ACK
+        OUT->>DB: Marcar PUBLISHED
+    else Kafka no disponible
+        KF--xOUT: Error
+        Note over OUT: Se reintentará posteriormente
+        Note over DB: El evento permanece PENDING
+    end
+```
+
+Esto evita:
+
+```text
+BD confirmada + evento Kafka perdido
+```
+
+---
+
+# 39. Diagrama de Secuencia — Idempotent Consumer
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant KF as Kafka
+    participant C as Consumer
+    participant DB as PostgreSQL
+
+    KF->>C: Evento eventId=ABC
+
+    C->>DB: ¿ABC ya fue procesado?
+
+    alt Ya procesado
+        DB-->>C: Sí
+        C-->>KF: ACK sin repetir efecto
+    else No procesado
+        DB-->>C: No
+        C->>DB: Ejecutar efecto de negocio
+        C->>DB: Registrar eventId ABC
+        C-->>KF: ACK
+    end
+
+    Note over KF,C: Si Kafka reentrega ABC, el efecto no se duplica
+```
+
+---
+
+# 40. Diagrama de Secuencia — Mis Solicitudes / CQRS + Redis
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor U as Usuario
+    participant A as Angular
+    participant K as Kong
+    participant Q as Query Service
+    participant R as Redis
+    participant DB as query_db
+
+    U->>A: Abrir "Mis solicitudes"
+    A->>K: GET /api/v1/query/my-requests + JWT
+    K->>Q: HTTPS + JWT
+
+    Q->>R: Buscar cache por usuario
+
+    alt Cache HIT
+        R-->>Q: Read Model cacheado
+        Q-->>K: Respuesta
+        K-->>A: Solicitudes
+        A-->>U: Mostrar resultados
+    else Cache MISS
+        R-->>Q: Sin dato
+        Q->>DB: Consultar Read Model
+        DB-->>Q: Solicitudes
+        Q->>R: Guardar cache con TTL
+        Q-->>K: Respuesta
+        K-->>A: Solicitudes
+        A-->>U: Mostrar resultados
+    end
+```
+
+## Si Redis falla
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant A as Angular
+    participant Q as Query Service
+    participant R as Redis
+    participant DB as query_db
+
+    A->>Q: Consultar solicitudes
+    Q->>R: GET
+    R--xQ: Redis no disponible
+    Q->>DB: Fallback a PostgreSQL
+    DB-->>Q: Read Model
+    Q-->>A: Respuesta correcta
+
+    Note over Q,DB: Redis mejora rendimiento, pero no es fuente de verdad
+```
+
+---
+
+# 41. Diagrama de Secuencia — Notification → IAM por gRPC seguro
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant N as Notification Service
+    participant K as Kong
+    participant IAM as IAM Service
+    participant GRPC as IAM gRPC
+    participant DB as iam_db
+
+    N->>K: OAuth2 Client Credentials
+    Note over N,K: client_id + client_secret + scope iam.user.read
+
+    K->>IAM: /oauth2/token
+    IAM-->>K: JWT de servicio
+    K-->>N: Access Token
+
+    N->>GRPC: GetUser(userId)<br/>mTLS + Bearer JWT
+
+    GRPC->>GRPC: Validar certificado cliente
+    GRPC->>GRPC: Validar issuer/audience/scope/token_use
+    GRPC->>DB: Buscar usuario
+    DB-->>GRPC: Datos del usuario
+    GRPC-->>N: UserInfo
+
+    Note over N,GRPC: mTLS autentica workload<br/>OAuth2 autoriza la operación
+```
+
+---
+
+# 42. Diagrama de Secuencia — Resiliencia gRPC
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant N as Notification Service
+    participant B as Bulkhead
+    participant CB as Circuit Breaker
+    participant IAM as IAM gRPC
+
+    N->>B: Solicitar datos usuario
+
+    alt Más de 10 llamadas concurrentes
+        B--xN: BulkheadFullException
+    else Hay capacidad
+        B->>CB: Ejecutar llamada
+
+        alt Circuit Breaker OPEN
+            CB--xN: Fail Fast
+        else Circuit Breaker permite llamada
+            CB->>IAM: gRPC con deadline
+
+            alt Llamada exitosa
+                IAM-->>CB: UserInfo
+                CB-->>N: Resultado
+            else Error temporal
+                IAM--xCB: Timeout/Error
+                CB->>IAM: Retry según configuración
+            end
+        end
+    end
+```
+
+Funciones:
+
+```text
+Bulkhead       → limita concurrencia
+CircuitBreaker → evita golpear repetidamente una dependencia caída
+Retry          → reintenta errores temporales
+Timeout        → evita esperas indefinidas
+```
+
+---
+
+# 43. Diagrama de Secuencia — Retry y Dead Letter Topic
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant KF as Kafka
+    participant C as Consumer
+    participant DLT as Dead Letter Topic
+    participant A as Audit Service
+
+    KF->>C: Evento
+
+    C->>C: Procesar
+
+    alt Procesamiento correcto
+        C-->>KF: ACK
+    else Fallo
+        C->>C: Retry 1
+        C->>C: Retry 2
+        C->>C: Retry N
+
+        alt Recuperado
+            C-->>KF: ACK
+        else Fallo persistente
+            C->>DLT: Publicar evento fallido
+            DLT-->>A: Consumir DLT
+            A->>A: Registrar error/auditoría
+        end
+    end
+```
+
+La DLT evita que un evento defectuoso bloquee indefinidamente el procesamiento normal.
+
+---
+
+# 44. Diagrama de Observabilidad
+
+```mermaid
+flowchart LR
+
+    S[Microservicios Java]
+
+    ACT[Spring Boot Actuator<br/>Micrometer]
+    PROM[Prometheus]
+
+    LOG[stdout Docker]
+    ALLOY[Grafana Alloy]
+    LOKI[Loki]
+
+    OTELAG[OpenTelemetry Java Agent]
+    COL[OTel Collector]
+    TEMPO[Tempo]
+
+    G[Grafana]
+
+    S --> ACT
+    ACT --> PROM
+    PROM --> G
+
+    S --> LOG
+    LOG --> ALLOY
+    ALLOY --> LOKI
+    LOKI --> G
+
+    S --> OTELAG
+    OTELAG --> COL
+    COL --> TEMPO
+    TEMPO --> G
+```
+
+Los tres pilares:
+
+```text
+Métricas → Prometheus
+Logs     → Loki
+Trazas   → Tempo
+                ↓
+             Grafana
+```
+
+---
+
+# 45. Vista resumida para exposición
+
+```mermaid
+flowchart LR
+    USER[Usuario]
+    ANG[Angular]
+    KG[Kong]
+    IAM[IAM]
+    CR[Credit]
+    PAY[Payment]
+    SC[Scoring]
+    REP[Report]
+    NOT[Notification]
+    KF[(Kafka)]
+    MIN[(MinIO)]
+    DB[(PostgreSQL)]
+    Q[Query]
+    RED[(Redis)]
+    OBS[Grafana<br/>Prometheus · Loki · Tempo]
+
+    USER --> ANG
+    ANG --> KG
+    KG --> IAM
+    KG --> CR
+    KG --> PAY
+    KG --> Q
+    KG --> REP
+
+    CR --> KF
+    PAY --> KF
+    KF --> SC
+    SC --> KF
+    KF --> REP
+    REP --> MIN
+    REP --> KF
+    KF --> NOT
+
+    NOT -. gRPC .-> IAM
+
+    IAM --> DB
+    CR --> DB
+    PAY --> DB
+    SC --> DB
+    REP --> DB
+    NOT --> DB
+    Q --> DB
+    Q --> RED
+
+    IAM -.-> OBS
+    CR -.-> OBS
+    PAY -.-> OBS
+    SC -.-> OBS
+    REP -.-> OBS
+    NOT -.-> OBS
+    Q -.-> OBS
+```
+
+### Explicación corta
+
+> Angular se comunica con Kong por HTTPS. Kong aplica seguridad, JWT, CORS, rate limiting y routing. Los microservicios mantienen sus propias bases de datos. Kafka coordina el workflow distribuido mediante eventos y Saga por coreografía. Payment, Credit, Scoring, Report y Notification se desacoplan mediante Kafka. Report almacena el PDF en MinIO. Query Service construye el modelo de lectura y utiliza Redis como cache. Notification consulta IAM mediante gRPC protegido por mTLS y OAuth2 Client Credentials. Vault administra los secretos y la observabilidad se implementa con Prometheus, Loki, Tempo, OpenTelemetry y Grafana.
+
