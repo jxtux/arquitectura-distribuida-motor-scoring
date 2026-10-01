@@ -1,2 +1,32 @@
-package com.finanscore.support.idempotency; import org.springframework.stereotype.Service; import java.time.Instant; import java.util.UUID;
-@Service public class IdempotentEventGuard { private final ProcessedEventRepository repo; public IdempotentEventGuard(ProcessedEventRepository r){repo=r;} public boolean alreadyProcessed(String id,String consumer){return repo.existsByEventIdAndConsumerName(id,consumer);} public void markProcessed(String id,String consumer){ if(alreadyProcessed(id,consumer))return; var x=new ProcessedEventEntity();x.id=UUID.randomUUID();x.eventId=id;x.consumerName=consumer;x.processedAt=Instant.now();repo.save(x);} }
+package com.finanscore.support.idempotency;
+
+import org.springframework.stereotype.Service;
+import java.time.Instant;
+import java.util.UUID;
+
+
+//Detecta eventId ya procesados. 
+//Kafka puede entregar más de una vez; evitamos ejecutar dos veces el efecto de negocio.
+@Service
+public class IdempotentEventGuard {
+	private final ProcessedEventRepository repo;
+
+	public IdempotentEventGuard(ProcessedEventRepository r) {
+		repo = r;
+	}
+
+	public boolean alreadyProcessed(String id, String consumer) {
+		return repo.existsByEventIdAndConsumerName(id, consumer);
+	}
+
+	public void markProcessed(String id, String consumer) {
+		if (alreadyProcessed(id, consumer))
+			return;
+		var x = new ProcessedEventEntity();
+		x.id = UUID.randomUUID();
+		x.eventId = id;
+		x.consumerName = consumer;
+		x.processedAt = Instant.now();
+		repo.save(x);
+	}
+}

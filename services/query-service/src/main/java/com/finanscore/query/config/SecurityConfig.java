@@ -1,11 +1,65 @@
 package com.finanscore.query.config;
 
 import com.finanscore.query.security.PemKeyLoader;
-import org.springframework.beans.factory.annotation.Value;import org.springframework.context.annotation.*;import org.springframework.security.config.Customizer;import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;import org.springframework.security.config.annotation.web.builders.HttpSecurity;import org.springframework.security.oauth2.core.*;import org.springframework.security.oauth2.jwt.*;import org.springframework.security.oauth2.server.resource.authentication.*;import org.springframework.security.web.SecurityFilterChain;import java.security.interfaces.RSAPublicKey;import java.util.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.*;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.core.*;
+import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.server.resource.authentication.*;
+import org.springframework.security.web.SecurityFilterChain;
+import java.security.interfaces.RSAPublicKey;
+import java.util.*;
 
-@Configuration @EnableMethodSecurity
+
+//El microservicio vuelve a validar el JWT después de Kong. 
+//Aplicamos defensa en profundidad: Kong valida en el perímetro y Spring Security dentro del servicio.
+
+
+@Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
- @Bean RSAPublicKey jwtPublicKey(@Value("${app.security.public-key}") String path){return PemKeyLoader.publicKey(path);}
- @Bean JwtDecoder jwtDecoder(RSAPublicKey key,@Value("${app.security.issuer}") String issuer,@Value("${app.security.audience}") String audience){var d=NimbusJwtDecoder.withPublicKey(key).build();OAuth2TokenValidator<Jwt> i=JwtValidators.createDefaultWithIssuer(issuer);OAuth2TokenValidator<Jwt> a=j->j.getAudience().contains(audience)?OAuth2TokenValidatorResult.success():OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token","Audience inválido",null));OAuth2TokenValidator<Jwt> access=j->"ACCESS".equals(j.getClaimAsString("token_use"))?OAuth2TokenValidatorResult.success():OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token","Access token requerido",null));OAuth2TokenValidator<Jwt> mfa=j->Boolean.TRUE.equals(j.getClaim("mfa"))?OAuth2TokenValidatorResult.success():OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token","MFA requerido",null));d.setJwtValidator(new DelegatingOAuth2TokenValidator<>(i,a,access,mfa));return d;}
- @Bean SecurityFilterChain chain(HttpSecurity http,JwtDecoder decoder)throws Exception{JwtAuthenticationConverter c=new JwtAuthenticationConverter();c.setJwtGrantedAuthoritiesConverter(jwt->{Set<org.springframework.security.core.GrantedAuthority> o=new HashSet<>();var p=jwt.getClaimAsStringList("permissions");var r=jwt.getClaimAsStringList("roles");if(p!=null)p.forEach(x->o.add(new org.springframework.security.core.authority.SimpleGrantedAuthority(x)));if(r!=null)r.forEach(x->o.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_"+x)));return o;});return http.csrf(x->x.disable()).cors(Customizer.withDefaults()).authorizeHttpRequests(a->a.requestMatchers("/actuator/health/**","/actuator/prometheus","/actuator/info","/v3/api-docs/**","/swagger-ui/**").permitAll().anyRequest().authenticated()).oauth2ResourceServer(o->o.jwt(j->j.decoder(decoder).jwtAuthenticationConverter(c))).build();}
+	@Bean
+	RSAPublicKey jwtPublicKey(@Value("${app.security.public-key}") String path) {
+		return PemKeyLoader.publicKey(path);
+	}
+
+	@Bean
+	JwtDecoder jwtDecoder(RSAPublicKey key, @Value("${app.security.issuer}") String issuer,
+			@Value("${app.security.audience}") String audience) {
+		var d = NimbusJwtDecoder.withPublicKey(key).build();
+		OAuth2TokenValidator<Jwt> i = JwtValidators.createDefaultWithIssuer(issuer);
+		OAuth2TokenValidator<Jwt> a = j -> j.getAudience().contains(audience) ? OAuth2TokenValidatorResult.success()
+				: OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Audience inválido", null));
+		OAuth2TokenValidator<Jwt> access = j -> "ACCESS".equals(j.getClaimAsString("token_use"))
+				? OAuth2TokenValidatorResult.success()
+				: OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Access token requerido", null));
+		OAuth2TokenValidator<Jwt> mfa = j -> Boolean.TRUE.equals(j.getClaim("mfa"))
+				? OAuth2TokenValidatorResult.success()
+				: OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "MFA requerido", null));
+		d.setJwtValidator(new DelegatingOAuth2TokenValidator<>(i, a, access, mfa));
+		return d;
+	}
+
+	@Bean
+	SecurityFilterChain chain(HttpSecurity http, JwtDecoder decoder) throws Exception {
+		JwtAuthenticationConverter c = new JwtAuthenticationConverter();
+		c.setJwtGrantedAuthoritiesConverter(jwt -> {
+			Set<org.springframework.security.core.GrantedAuthority> o = new HashSet<>();
+			var p = jwt.getClaimAsStringList("permissions");
+			var r = jwt.getClaimAsStringList("roles");
+			if (p != null)
+				p.forEach(x -> o.add(new org.springframework.security.core.authority.SimpleGrantedAuthority(x)));
+			if (r != null)
+				r.forEach(x -> o
+						.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + x)));
+			return o;
+		});
+		return http.csrf(x -> x.disable()).cors(Customizer.withDefaults())
+				.authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**", "/actuator/prometheus",
+						"/actuator/info", "/v3/api-docs/**", "/swagger-ui/**").permitAll().anyRequest().authenticated())
+				.oauth2ResourceServer(o -> o.jwt(j -> j.decoder(decoder).jwtAuthenticationConverter(c))).build();
+	}
 }
